@@ -2,12 +2,14 @@ use aws_sdk_s3::{Client, config::{Credentials, Region}};
 use crate::config::AppConfig;
 use crate::error::AppError;
 
+/// Client for interacting with AWS S3.
 pub struct S3Client {
     client: Client,
     bucket_name: String,
 }
 
 impl S3Client {
+    /// Creates a new S3 client using the provided configuration.
     pub fn new(config: &AppConfig) -> Self {
         let credentials = Credentials::new(
             config.aws_access_key_id.clone(),
@@ -28,6 +30,11 @@ impl S3Client {
         }
     }
 
+    /// Tests the connection to the S3 bucket by listing objects.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the connection is successful.
+    /// - `Err(AppError)` if the connection fails.
     pub async fn test_connection(&self) -> Result<(), AppError> {
         self.client
             .list_objects_v2()

@@ -7,13 +7,30 @@ use crate::clients::{
     redis_client::RedisClient
 };
 
+/// A struct that holds all the clients required by the application.
+///
+/// # Fields
+///
+/// * `s3_client` - An instance of the S3 client.
+/// * `postgres_client` - An instance of the PostgreSQL client.
+/// * `redis_client` - An instance of the Redis client.
+///
 pub struct Clients {
     s3_client: S3Client,
     postgres_client: PostgresClient,
     redis_client: RedisClient,
 }
 
+/// Implementation block for `Clients`.
+/// Contains methods to create and test connections to the clients.
+///
+/// # Methods
+///
+/// * `new` - Creates a new instance of `Clients`.
+/// * `test_connections` - Tests the connections to all the clients.
+///
 impl Clients {
+    /// Creates a new instance of `Clients`.
     pub async fn new(config: &AppConfig) -> Result<Self, AppError> {
         Ok(Self {
             s3_client: S3Client::new(config),
@@ -22,6 +39,7 @@ impl Clients {
         })
     }
 
+    /// Tests the connections to all the clients.
     pub async fn test_connections(&self) -> Result<(), AppError> {
         if let Err(e) = self.s3_client.test_connection().await {
             error!("Failed to connect to S3: {}", e);
