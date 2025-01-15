@@ -26,23 +26,20 @@ impl Clients {
         if let Err(e) = self.s3_client.test_connection().await {
             error!("Failed to connect to S3: {}", e);
             return Err(e.into());
-        } else {
-            info!("S3 connection established successfully!");
         }
+        info!("S3 connection established successfully!");
 
         if let Err(e) = self.postgres_client.test_connection().await {
             error!("Failed to connect to PostgreSQL: {}", e);
             return Err(e.into());
-        } else {
-            info!("PostgreSQL connection established successfully!");
         }
+        info!("PostgreSQL connection established successfully!");
 
         if let Err(e) = self.redis_client.test_connection().await {
             error!("Failed to connect to Redis: {}", e);
             return Err(e.into());
-        } else {
-            info!("Redis connection established successfully!");
         }
+        info!("Redis connection established successfully!");
 
         Ok(())
     }
