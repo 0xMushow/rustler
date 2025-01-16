@@ -61,4 +61,19 @@ impl Clients {
 
         Ok(())
     }
+
+    /// Returns a reference to the S3 client.
+    pub fn get_s3_client(&self) -> S3Client {
+        self.s3_client.clone()
+    }
+
+    /// Returns a reference to the PostgreSQL client.
+    pub fn get_postgres_client(&self) -> PostgresClient {
+        self.postgres_client.clone()
+    }
+
+    /// Returns a reference to the Redis client.
+    pub fn get_redis_client(&self) -> RedisClient {
+        self.redis_client.clone()
+    }
 }
