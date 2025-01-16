@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+axum = "0.8.1"
 aws-sdk-s3 = { version = "1.68.0", features = ["behavior-version-latest"] }
 tokio = { version = "1.43.0", features = ["full"] }
 sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio-native-tls", "chrono"] }
