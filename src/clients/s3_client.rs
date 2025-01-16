@@ -3,6 +3,7 @@ use crate::config::AppConfig;
 use crate::error::AppError;
 
 /// Client for interacting with AWS S3.
+#[derive(Clone)]
 pub struct S3Client {
     client: Client,
     bucket_name: String,

@@ -6,6 +6,7 @@ use crate::error::AppError;
 ///
 /// This struct encapsulates the connection to a Redis server and provides methods
 /// for testing the connection and performing Redis operations.
+#[derive(Clone)]
 pub struct RedisClient {
     client: Client,
 }

@@ -6,6 +6,7 @@ use crate::error::AppError;
 ///
 /// This struct encapsulates a connection pool to a PostgreSQL database and provides
 /// methods for testing the connection and performing database operations.
+#[derive(Clone)]
 pub struct PostgresClient {
     pool: PgPool,
 }
@@ -38,5 +39,10 @@ impl PostgresClient {
             .fetch_one(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Returns a reference to the connection pool.
+    pub fn get_pool(&self) -> &PgPool {
+        &self.pool
     }
 }
