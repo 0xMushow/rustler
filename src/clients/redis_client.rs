@@ -39,4 +39,13 @@ impl RedisClient {
         let _: String = con.get("test_key").await?;
         Ok(())
     }
+
+    /// Returns a reference to the Redis client.
+    ///
+    /// # Returns
+    /// - A reference to the Redis client.
+    ///
+    pub fn get_client(&self) -> &Client {
+        &self.client
+    }
 }
