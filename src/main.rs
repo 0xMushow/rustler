@@ -7,6 +7,9 @@
 mod config;
 mod error;
 mod clients;
+mod routes;
+mod services;
+mod controllers;
 
 use std::sync::Arc;
 use log::{error, info};
@@ -16,6 +19,7 @@ use anyhow::{Context, Result};
 use axum::{serve, Extension, Router};
 use tokio::net::TcpListener;
 use crate::clients::clients::Clients;
+use crate::routes::health_routes::health_routes;
 
 /// The main application logic.
 ///
@@ -52,7 +56,9 @@ async fn run_server(state: Arc<Clients>) {
     let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
     info!("Server running on http://0.0.0.0:3000");
 
-    let app = Router::new().layer(Extension(state.clone()));
+    let app = Router::new()
+        .merge(health_routes())
+        .layer(Extension(state.clone()));
 
     serve(listener, app).await.unwrap();
 }
@@ -63,7 +69,7 @@ async fn run_server(state: Arc<Clients>) {
 /// If an error occurs, it logs the error and exits the application.
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("off"));
 
     if let Err(e) = run().await {
         error!("Application error: {}", e);
