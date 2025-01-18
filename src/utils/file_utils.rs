@@ -135,7 +135,8 @@ impl FileValidator {
         validator
     }
 
-    /// Registers the default file types (ZIP, PNG, JPEG).
+    /// Registers the default file types (ZIP).
+    /// You can add more file types using the `register_file_type` method.
     /// This method is called by `new` to initialize the validator with the default file types.
     fn register_default_types(&mut self) {
         // ZIP File Type
@@ -145,27 +146,6 @@ impl FileValidator {
             vec!["application/zip"],
             vec![vec![0x50, 0x4B, 0x03, 0x04]], // ZIP magic number
             100 * 1024 * 1024, // 100MB
-        ));
-
-        // PNG File Type
-        self.register_file_type(FileType::new(
-            "PNG",
-            vec!["png"],
-            vec!["image/png"],
-            vec![vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]], // PNG magic number
-            10 * 1024 * 1024, // 10MB
-        ));
-
-        // JPEG File Type
-        self.register_file_type(FileType::new(
-            "JPEG",
-            vec!["jpg", "jpeg"],
-            vec!["image/jpeg"],
-            vec![
-                vec![0xFF, 0xD8, 0xFF, 0xE0],
-                vec![0xFF, 0xD8, 0xFF, 0xE1],
-            ], // JPEG magic numbers
-            10 * 1024 * 1024, // 10MB
         ));
     }
 
