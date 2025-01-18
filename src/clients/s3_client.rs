@@ -1,4 +1,6 @@
+use std::error::Error;
 use aws_sdk_s3::{Client, config::{Credentials, Region}};
+use aws_sdk_s3::primitives::ByteStream;
 use crate::config::AppConfig;
 use crate::error::AppError;
 
@@ -40,6 +42,42 @@ impl S3Client {
         self.client
             .list_objects_v2()
             .bucket(&self.bucket_name)
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    /// Returns a reference to the S3 client.
+    ///
+    /// # Returns
+    /// - A reference to the S3 client.
+    ///
+    pub fn get_client(&self) -> &Client {
+        &self.client
+    }
+
+    /// Returns the name of the S3 bucket.
+    ///
+    /// # Returns
+    /// - The name of the S3 bucket.
+    ///
+    pub fn get_bucket_name(&self) -> String {
+        self.bucket_name.clone()
+    }
+
+    /// Uploads a file to the S3 bucket.
+    ///
+    /// # Parameters
+    /// - `file_name` - The name of the file to upload.
+    /// - `data` - The file content as a byte array.
+    ///
+    pub async fn upload_file(&self, file_name: &str, data: &[u8]) -> Result<(), Box<dyn Error>> {
+        let byte_stream = ByteStream::from(data.to_vec());
+        self.get_client()
+            .put_object()
+            .bucket(self.get_bucket_name())
+            .key(file_name)
+            .body(byte_stream)
             .send()
             .await?;
         Ok(())
