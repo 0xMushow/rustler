@@ -1,3 +1,7 @@
+use std::fs::File;
+use std::{fs, io};
+use std::io::Write;
+use std::path::Path;
 use axum::{
     extract::Multipart,
     http::StatusCode,
@@ -8,7 +12,9 @@ use serde_json::json;
 use std::sync::Arc;
 use axum::response::Response;
 use log::{error, info, warn};
+use zip::ZipArchive;
 use crate::clients::clients::Clients;
+use crate::error::AppError;
 use crate::utils::file_utils::FileValidator;
 
 /// A service to handle file-related operations.
@@ -91,6 +97,53 @@ impl FileService {
                 self.error_response(validation_error.code, &validation_error.message)
             }
         }
+    }
+
+    /// Downloads and extracts a ZIP file from S3.
+    ///
+    /// # Parameters
+    /// - `s3_key`: The S3 key of the ZIP file.
+    /// - `output_dir`: The directory where the ZIP file will be extracted.
+    ///
+    /// # Returns
+    /// - `Ok(Vec<String>)`: A list of file paths extracted from the ZIP file.
+    /// - `Err(AppError)`: An error if the download or extraction fails.
+    pub async fn download_and_extract_zip(
+        &self,
+        s3_key: &str,
+        output_dir: &str,
+    ) -> Result<Vec<String>, AppError> {
+        let zip_data = self.clients.get_s3_client().
+            download_file(&format!("{}.zip", s3_key)).await?;
+
+        fs::create_dir_all(output_dir)?;
+
+        let zip_path = Path::new(output_dir).join("temp.zip");
+        let mut file = File::create(&zip_path)?;
+        file.write_all(&zip_data)?;
+
+        let file = File::open(&zip_path)?;
+        let mut archive = ZipArchive::new(file)?;
+
+        let mut extracted_files = Vec::new();
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)?;
+            let outpath = Path::new(output_dir).join(file.mangled_name());
+
+            if file.is_dir() {
+                fs::create_dir_all(&outpath)?;
+            } else {
+                let mut outfile = File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
+
+                extracted_files.push(outpath.to_string_lossy().to_string());
+            }
+        }
+
+        fs::remove_file(&zip_path)?;
+
+        Ok(extracted_files)
     }
 
     /// Helper function to create an error response.
