@@ -9,22 +9,23 @@ use std::sync::Arc;
 use axum::response::Response;
 use log::{error, info, warn};
 use crate::clients::clients::Clients;
-
-/// The maximum allowed file size in bytes.
-/// This is set to 100 MB.
-const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
+use crate::utils::file_utils::FileValidator;
 
 /// A service to handle file-related operations.
 /// This service is used to upload files to S3.
 pub struct FileService {
     clients: Arc<Clients>,
+    validator: FileValidator,
 }
 
 impl FileService {
     /// Creates a new instance of `FileService`.
     pub fn new(clients: Arc<Clients>) -> Self {
         info!("FileService initialized");
-        Self { clients }
+        Self {
+            clients,
+            validator: FileValidator::new(),
+        }
     }
 
     /// Handles file uploads.
@@ -51,72 +52,43 @@ impl FileService {
             }
         };
 
-        let file_name = match field.file_name() {
-            Some(name) if name.to_lowercase().ends_with(".zip") => name.to_string(),
-            Some(name) => {
-                warn!(
-                    "Invalid file type provided. File name: '{}', Content-Type: '{}'",
-                    name,
-                    field.content_type().unwrap_or("unknown")
-                );
-                return self.error_response(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Only .zip files are allowed");
-            }
+        let file_name = field.file_name().unwrap_or("").to_string();
+        let extension = file_name.split('.').last().unwrap_or("").to_lowercase();
+
+        let file_type = match self.validator.find_file_type_by_extension(&extension) {
+            Some(file_type) => file_type,
             None => {
-                warn!(
-                    "No filename provided. Content-Type: '{}'",
-                    field.content_type().unwrap_or("unknown")
-                );
-                return self.error_response(StatusCode::BAD_REQUEST, "No filename provided");
+                warn!("Unsupported file extension: {}", extension);
+                return self.error_response(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Unsupported file extension");
             }
         };
 
-        let content_type = field.content_type().unwrap_or("").to_string();
-        if content_type != "application/zip" {
-            warn!(
-                "Unsupported content type for file: '{}'. Content-Type: '{}'",
-                file_name, content_type
-            );
-            return self.error_response(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Only .zip files are allowed");
-        }
-
-        let mut total_bytes = 0;
-        let mut buffer = Vec::new();
-
-        info!("Starting to stream file content...");
-
-        while let Some(chunk) = field.chunk().await.transpose() {
-            match chunk {
-                Ok(data) => {
-                    total_bytes += data.len();
-
-                    if total_bytes > MAX_FILE_SIZE {
-                        warn!(
-                            "File exceeds maximum allowed size: {} bytes. File name: '{}', Content-Type: '{}'",
-                            MAX_FILE_SIZE, file_name, content_type
-                        );
-                        return self.error_response(StatusCode::PAYLOAD_TOO_LARGE, "File exceeds maximum allowed size");
+        match self.validator.validate_file(&file_type.name, &mut field).await {
+            Ok(buffer) => {
+                match self.clients.get_s3_client().upload_file(&file_name, &buffer).await {
+                    Ok(_) => {
+                        info!(
+                        "Successfully uploaded file to S3: '{}'. Size: {} bytes",
+                        file_name,
+                        buffer.len()
+                    );
+                        self.success_response(file_name, buffer.len())
                     }
-
-                    buffer.extend_from_slice(&data);
-                }
-                Err(e) => {
-                    error!("Error reading chunk for file: '{}'. Error: {:?}", file_name, e);
-                    return self.error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to read chunk: {:?}", e));
+                    Err(e) => {
+                        error!("Error uploading file to S3: '{}'. Error: {:?}", file_name, e);
+                        self.error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            &format!("Failed to upload file to S3: {:?}", e),
+                        )
+                    }
                 }
             }
-        }
-
-        match self.clients.get_s3_client().upload_file(&file_name, &buffer).await {
-            Ok(_) => {
-                info!(
-                    "Successfully uploaded file to S3: '{}'. Size: {} bytes",
-                    file_name, total_bytes
-                );
-                self.success_response(file_name, total_bytes)
-            }
-            Err(e) => {
-                error!("Error uploading file to S3: '{}'. Error: {:?}", file_name, e);
-                self.error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to upload file to S3: {:?}", e))
+            Err(validation_error) => {
+                warn!(
+                "File validation failed for '{}': {}",
+                file_name, validation_error.message
+            );
+                self.error_response(validation_error.code, &validation_error.message)
             }
         }
     }
