@@ -16,9 +16,10 @@ use log::{error, info};
 use config::AppConfig;
 
 use anyhow::{Context, Result};
-use axum::{serve, Extension, Router};
+use axum::{serve, Router};
 use tokio::net::TcpListener;
 use crate::clients::clients::Clients;
+use crate::routes::file_routes::file_routes;
 use crate::routes::health_routes::health_routes;
 
 /// The main application logic.
@@ -57,8 +58,8 @@ async fn run_server(state: Arc<Clients>) {
     info!("Server running on http://0.0.0.0:3000");
 
     let app = Router::new()
-        .merge(health_routes())
-        .layer(Extension(state.clone()));
+        .merge(file_routes(state))
+        .merge(health_routes());
 
     serve(listener, app).await.unwrap();
 }
