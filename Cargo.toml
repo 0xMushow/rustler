@@ -20,3 +20,4 @@ anyhow = "1.0.95"
 chrono = { version = "0.4.39", features = ["serde"] }
 validator = { version = "0.19.0", features = ["derive"] }
 tower-http = { version = "0.6.2", features = ["limit"] }
+zip = "2.2.2"
