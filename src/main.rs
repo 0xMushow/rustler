@@ -10,9 +10,10 @@ mod clients;
 mod routes;
 mod services;
 mod controllers;
+mod utils;
 
 use std::sync::Arc;
-use log::{error, info, warn};
+use log::{error, info};
 use config::AppConfig;
 
 use anyhow::{Context, Result};
