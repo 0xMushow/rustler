@@ -12,7 +12,7 @@ mod services;
 mod controllers;
 
 use std::sync::Arc;
-use log::{error, info};
+use log::{error, info, warn};
 use config::AppConfig;
 
 use anyhow::{Context, Result};
@@ -70,7 +70,7 @@ async fn run_server(state: Arc<Clients>) {
 /// If an error occurs, it logs the error and exits the application.
 #[tokio::main]
 async fn main() {
-    env_logger::init_from_env(env_logger::Env::default().default_filter_or("off"));
+    env_logger::init();
 
     if let Err(e) = run().await {
         error!("Application error: {}", e);
