@@ -44,7 +44,7 @@ pub enum AppError {
     ZipError(#[from] zip::result::ZipError),
 
     /// An error indicating a failure during S3 object download.
-    #[error("Sdk Download Object Error: {0}")]
+    #[error("Unable to download the object: {0}")]
     SdkDownloadObjectError(#[from] SdkError<GetObjectError, HttpResponse>),
 
     /// An error indicating a failure during byte stream operations.
