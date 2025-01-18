@@ -82,4 +82,21 @@ impl S3Client {
             .await?;
         Ok(())
     }
+
+    /// Downloads a file from the S3 bucket.
+    ///
+    /// # Parameters
+    /// - `key` - The key of the file to download.
+    ///
+    pub async fn download_file(&self, key: &str) -> Result<Vec<u8>, AppError> {
+        let response = self.client
+            .get_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .send()
+            .await?;
+
+        let data = response.body.collect().await?;
+        Ok(data.into_bytes().to_vec())
+    }
 }
