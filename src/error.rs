@@ -7,6 +7,7 @@ use std::io;
 use aws_sdk_s3::config::http::HttpResponse;
 use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::primitives::ByteStreamError;
+use serde_json::Error;
 
 /// Represents custom errors that can occur in the application.
 ///
@@ -50,4 +51,7 @@ pub enum AppError {
     /// An error indicating a failure during byte stream operations.
     #[error("Byte Stream Error: {0}")]
     ByteStreamError(#[from] ByteStreamError),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] Error),
 }
