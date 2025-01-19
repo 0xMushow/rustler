@@ -70,11 +70,18 @@ impl FileType {
     /// - `true` if the file extension is valid.
     /// - `false` if the file extension is invalid
     ///
-    pub fn validate_extension(&self, filename: &str) -> bool {
-        let extension = filename.split('.').last().unwrap_or("");
+    pub fn validate_extension(&self, extension: &str) -> bool {
+        let parts: Vec<&str> = extension.split('.').collect();
+
+        let ext_to_validate = if parts.len() >= 2 && parts[parts.len() - 2..].join(".") == "tar.gz" {
+            "tar.gz".to_string()
+        } else {
+            parts.last().unwrap_or(&"").to_string()
+        };
+
         self.extensions
             .iter()
-            .any(|ext| ext.eq_ignore_ascii_case(extension))
+            .any(|ext| ext.eq_ignore_ascii_case(&ext_to_validate))
     }
 
     /// Validates whether the provided content type matches one of the allowed types.
@@ -147,6 +154,15 @@ impl FileValidator {
             vec![vec![0x50, 0x4B, 0x03, 0x04]], // ZIP magic number
             100 * 1024 * 1024, // 100MB
         ));
+
+        // TAR GZ File Type
+        self.register_file_type(FileType::new(
+            "TAR_GZ",
+            vec!["tar.gz"],
+            vec!["application/gzip", "application/x-gzip"],
+            vec![vec![0x1F, 0x8B]], // GZIP magic number
+            100 * 1024 * 1024, // 100MB
+        ));
     }
 
     /// Registers a new file type with the validator.
@@ -176,7 +192,6 @@ impl FileValidator {
             message: format!("Unsupported file type: {}", file_type_name),
         })?;
 
-        // Validate filename and extension
         let filename = field.file_name().ok_or_else(|| FileValidationError {
             code: StatusCode::BAD_REQUEST,
             message: "No filename provided".to_string(),
@@ -189,7 +204,6 @@ impl FileValidator {
             });
         }
 
-        // Validate content type
         let content_type = field.content_type().unwrap_or("");
         if !file_type.validate_content_type(content_type) {
             return Err(FileValidationError {
