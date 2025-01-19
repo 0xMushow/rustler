@@ -28,10 +28,9 @@ pub async fn view_codebase_handler(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let file_service = FileService::new(clients);
-
     let output_dir = format!("./competitions/{}", name);
 
-    match file_service.download_and_extract_zip_or_tar(&name, &output_dir).await {
+    match file_service.download_and_extract_archive(&name, &output_dir).await {
         Ok(files) => (StatusCode::OK, Json(json!({ "files": files }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
