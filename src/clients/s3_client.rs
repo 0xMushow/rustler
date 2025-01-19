@@ -99,4 +99,16 @@ impl S3Client {
         let data = response.body.collect().await?;
         Ok(data.into_bytes().to_vec())
     }
+
+    /// Checks if a file exists in the S3 bucket.
+    ///
+    /// # Parameters
+    /// - `key` - The key of the file to check.
+    ///
+    pub async fn file_exists(&self, key: &str) -> bool {
+        match self.get_client().head_object().bucket(&self.get_bucket_name()).key(key).send().await {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
 }
