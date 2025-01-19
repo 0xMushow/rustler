@@ -18,8 +18,23 @@ use crate::clients::clients::Clients;
 use crate::error::AppError;
 use crate::utils::file_utils::FileValidator;
 
+/// Supported archive file types
+#[derive(Debug)]
+enum ArchiveType {
+    Zip,
+    TarGz,
+}
+
+impl ArchiveType {
+    fn extension(&self) -> &str {
+        match self {
+            ArchiveType::Zip => ".zip",
+            ArchiveType::TarGz => ".tar.gz",
+        }
+    }
+}
+
 /// A service to handle file-related operations.
-/// This service is used to upload files to S3.
 pub struct FileService {
     clients: Arc<Clients>,
     validator: FileValidator,
@@ -33,6 +48,78 @@ impl FileService {
             clients,
             validator: FileValidator::new(),
         }
+    }
+
+    /// Detects the type of archive file based on the base name.
+    ///
+    /// This function checks if the archive file exists in S3 with the given base name
+    ///
+    /// # Parameters
+    /// - `base_name`: The base name of the archive file
+    async fn detect_archive_type(&self, base_name: &str) -> Result<(String, ArchiveType), AppError> {
+        for archive_type in [ArchiveType::Zip, ArchiveType::TarGz] {
+            let key = format!("{}{}", base_name, archive_type.extension());
+            if self.clients.get_s3_client().file_exists(&key).await {
+                return Ok((key, archive_type));
+            }
+        }
+
+        error!("No archive file found for base name: {}", base_name);
+        Err(
+            AppError::ValidationError(format!(
+            "No archive file found for base name: {}",
+            base_name
+        )))
+    }
+
+    /// Downloads and extracts an archive file from S3, automatically detecting the type
+    ///
+    /// # Parameters
+    /// - `base_name`: The base name of the archive file
+    /// - `output_dir`: The directory where the file will be extracted
+    pub async fn download_and_extract_archive(
+        &self,
+        base_name: &str,
+        output_dir: &str,
+    ) -> Result<Vec<String>, AppError> {
+        info!("Attempting to detect and extract archive for: {}", base_name);
+
+        let (s3_key, archive_type) = self.detect_archive_type(base_name).await?;
+
+        info!("Detected archive type {:?} at key: {}", archive_type, s3_key);
+
+        match archive_type {
+            ArchiveType::Zip => self.download_and_extract_zip(&s3_key, output_dir).await,
+            ArchiveType::TarGz => self.download_and_extract_tar_gz(&s3_key, output_dir).await,
+        }
+    }
+
+    /// Generic function to handle file download and temporary storage
+    async fn download_to_temp_file(
+        &self,
+        s3_key: &str,
+        output_dir: &str,
+        temp_filename: &str,
+    ) -> Result<std::path::PathBuf, AppError> {
+        create_dir_all(output_dir).map_err(|e| {
+            error!("Failed to create output directory: {}. Error: {:?}", output_dir, e);
+            AppError::FileIoError(e)
+        })?;
+
+        let file_data = self.clients.get_s3_client().download_file(s3_key).await?;
+
+        let temp_path = Path::new(output_dir).join(temp_filename);
+        let mut file = File::create(&temp_path).map_err(|e| {
+            error!("Failed to create temporary file: {:?}. Error: {:?}", temp_path, e);
+            AppError::FileIoError(e)
+        })?;
+
+        file.write_all(&file_data).map_err(|e| {
+            error!("Failed to write data to temporary file: {:?}. Error: {:?}", temp_path, e);
+            AppError::FileIoError(e)
+        })?;
+
+        Ok(temp_path)
     }
 
     /// Handles file uploads.
@@ -67,9 +154,7 @@ impl FileService {
         };
 
         let file_type = match self.validator.find_file_type_by_extension(&extension) {
-            Some(file_type) => {
-                file_type
-            },
+            Some(file_type) => file_type,
             None => {
                 warn!("Unsupported file extension: {}", extension);
                 return self.error_response(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Unsupported file extension");
@@ -80,11 +165,7 @@ impl FileService {
             Ok(buffer) => {
                 match self.clients.get_s3_client().upload_file(&file_name, &buffer).await {
                     Ok(_) => {
-                        info!(
-                    "Successfully uploaded file to S3: '{}'. Size: {} bytes",
-                    file_name,
-                    buffer.len()
-                );
+                        info!("Successfully uploaded file to S3: '{}'. Size: {} bytes", file_name, buffer.len());
                         self.success_response(file_name, buffer.len())
                     }
                     Err(e) => {
@@ -97,10 +178,7 @@ impl FileService {
                 }
             }
             Err(validation_error) => {
-                warn!(
-            "File validation failed for '{}': {}",
-            file_name, validation_error.message
-        );
+                warn!("File validation failed for '{}': {}", file_name, validation_error.message);
                 self.error_response(validation_error.code, &validation_error.message)
             }
         }
@@ -114,99 +192,25 @@ impl FileService {
     ///
     /// # Returns
     /// The response to return to the client.
-    pub async fn download_and_extract_zip_or_tar(
+    async fn download_and_extract_zip(
         &self,
         s3_key: &str,
         output_dir: &str,
     ) -> Result<Vec<String>, AppError> {
-        if s3_key.ends_with(".zip") {
-            self.download_and_extract_zip(s3_key, output_dir).await
-        } else if s3_key.ends_with(".tar.gz") {
-            self.download_and_extract_tar_gz(s3_key, output_dir).await
-        } else {
-            Err(AppError::ValidationError("Unsupported file type".to_string()))
-        }
-    }
+        info!("Starting download and extraction of ZIP file: {}", s3_key);
 
-
-    /// Downloads and extracts a ZIP file from S3.
-    ///
-    /// # Parameters
-    /// - `s3_key`: The S3 key of the ZIP file.
-    /// - `output_dir`: The directory where the ZIP file will be extracted.
-    ///
-    /// # Returns
-    /// - `Ok(Vec<String>)`: A list of file paths extracted from the ZIP file.
-    /// - `Err(AppError)`: An error if the download or extraction fails.
-    pub async fn download_and_extract_zip(
-        &self,
-        s3_key: &str,
-        output_dir: &str,
-    ) -> Result<Vec<String>, AppError> {
-        info!("Starting download and extraction of ZIP file for S3 key: {}", s3_key);
-
-        // Download the ZIP file from S3
-        let zip_data = match self.clients.get_s3_client().download_file(s3_key).await {
-            Ok(data) => {
-                info!("Successfully downloaded ZIP file from S3: {}", s3_key);
-                data
-            }
-            Err(e) => {
-                error!("Failed to download ZIP file from S3: {}. Error: {:?}", s3_key, e);
-                return Err(e.into());
-            }
-        };
-
-        // Create the output directory if it doesn't exist
-        if let Err(e) = create_dir_all(output_dir) {
-            error!("Failed to create output directory: {}. Error: {:?}", output_dir, e);
-            return Err(e.into());
-        }
-        info!("Created or verified output directory: {}", output_dir);
-
-        // Save the ZIP file locally
-        let zip_path = Path::new(output_dir).join("temp.zip");
-        let mut file = match File::create(&zip_path) {
-            Ok(file) => {
-                info!("Temporary ZIP file created at: {:?}", zip_path);
-                file
-            }
-            Err(e) => {
-                error!("Failed to create temporary ZIP file: {:?}. Error: {:?}", zip_path, e);
-                return Err(e.into());
-            }
-        };
-
-        if let Err(e) = file.write_all(&zip_data) {
-            error!("Failed to write ZIP data to file: {:?}. Error: {:?}", zip_path, e);
-            return Err(e.into());
-        }
-        info!("ZIP data successfully written to temporary file: {:?}", zip_path);
-
-        // Extract the ZIP file
-        let file = match File::open(&zip_path) {
-            Ok(file) => {
-                info!("Opened temporary ZIP file for extraction: {:?}", zip_path);
-                file
-            }
-            Err(e) => {
-                error!("Failed to open temporary ZIP file for extraction: {:?}. Error: {:?}", zip_path, e);
-                return Err(e.into());
-            }
-        };
-
-        let mut archive = match ZipArchive::new(file) {
-            Ok(archive) => {
-                info!("Successfully read ZIP archive: {:?}", zip_path);
-                archive
-            }
-            Err(e) => {
-                error!("Failed to read ZIP archive: {:?}. Error: {:?}", zip_path, e);
-                return Err(e.into());
-            }
-        };
-
+        let zip_path = self.download_to_temp_file(s3_key, output_dir, "temp.zip").await?;
         let mut extracted_files = Vec::new();
+
+        let file = File::open(&zip_path).map_err(|e| {
+            error!("Failed to open ZIP file for extraction: {:?}. Error: {:?}", zip_path, e);
+            AppError::FileIoError(e)
+        })?;
+
+        let mut archive = ZipArchive::new(file).map_err(|e| {
+            error!("Failed to read ZIP archive: {:?}. Error: {:?}", zip_path, e);
+            AppError::FileIoError(io::Error::new(io::ErrorKind::Other, e))
+        })?;
 
         for i in 0..archive.len() {
             let mut file = match archive.by_index(i) {
@@ -225,31 +229,18 @@ impl FileService {
                     continue;
                 }
             } else {
-                let mut outfile = match File::create(&outpath) {
-                    Ok(outfile) => outfile,
-                    Err(e) => {
-                        warn!("Failed to create file: {:?}. Error: {:?}", outpath, e);
-                        continue;
+                if let Ok(mut outfile) = File::create(&outpath) {
+                    if copy(&mut file, &mut outfile).is_ok() {
+                        extracted_files.push(outpath.to_string_lossy().to_string());
                     }
-                };
-
-                if let Err(e) = copy(&mut file, &mut outfile) {
-                    warn!("Failed to extract file: {:?}. Error: {:?}", outpath, e);
-                    continue;
                 }
-
-                extracted_files.push(outpath.to_string_lossy().to_string());
             }
         }
 
-        // Remove the ZIP file
         if let Err(e) = fs::remove_file(&zip_path) {
             warn!("Failed to remove temporary ZIP file: {:?}. Error: {:?}", zip_path, e);
-        } else {
-            info!("Successfully removed temporary ZIP file: {:?}", zip_path);
         }
 
-        info!("Completed extraction of ZIP file for S3 key: {}", s3_key);
         Ok(extracted_files)
     }
 
@@ -262,83 +253,40 @@ impl FileService {
     /// # Returns
     /// - `Ok(Vec<String>)`: A list of file paths extracted from the tar.gz file.
     /// - `Err(AppError)`: An error if the download or extraction fails.
-    pub async fn download_and_extract_tar_gz(
+    async fn download_and_extract_tar_gz(
         &self,
         s3_key: &str,
         output_dir: &str,
     ) -> Result<Vec<String>, AppError> {
-        info!("Starting download and extraction of tar.gz file for S3 key: {}", s3_key);
+        info!("Starting download and extraction of tar.gz file: {}", s3_key);
 
-        // Ensure the output directory exists
-        if let Err(e) = create_dir_all(output_dir) {
-            error!("Failed to create output directory: {:?}. Error: {:?}", output_dir, e);
-            return Err(AppError::FileIoError(io::Error::new(io::ErrorKind::NotFound, "Failed to create output directory")));
-        }
+        let tar_gz_path = self.download_to_temp_file(s3_key, output_dir, "temp.tar.gz").await?;
 
-        // Download the tar.gz file from S3
-        let tar_gz_data = match self.clients.get_s3_client().download_file(s3_key).await {
-            Ok(data) => {
-                info!("Successfully downloaded tar.gz file from S3: {}", s3_key);
-                data
-            }
-            Err(e) => {
-                error!("Failed to download tar.gz file from S3: {}. Error: {:?}", s3_key, e);
-                return Err(e.into());
-            }
-        };
-
-        // Save the tar.gz file locally
-        let tar_gz_path = Path::new(output_dir).join("temp.tar.gz");
-        let mut file = match File::create(&tar_gz_path) {
-            Ok(file) => {
-                info!("Temporary tar.gz file created at: {:?}", tar_gz_path);
-                file
-            }
-            Err(e) => {
-                error!("Failed to create temporary tar.gz file: {:?}. Error: {:?}", tar_gz_path, e);
-                return Err(e.into());
-            }
-        };
-
-        if let Err(e) = file.write_all(&tar_gz_data) {
-            error!("Failed to write tar.gz data to file: {:?}. Error: {:?}", tar_gz_path, e);
-            return Err(e.into());
-        }
-        info!("tar.gz data successfully written to temporary file: {:?}", tar_gz_path);
-
-        // Extract the files directly into the output directory
-        let status = match Command::new("tar")
+        let status = Command::new("tar")
             .arg("-xzf")
             .arg(&tar_gz_path)
             .arg("-C")
-            .arg(output_dir)  // No "extracted_files" subdirectory
+            .arg(output_dir)
             .status()
-        {
-            Ok(status) => status,
-            Err(e) => {
-                error!("Failed to execute `tar` command for extraction. Error: {:?}", e);
-                return Err(AppError::FileIoError(io::Error::new(io::ErrorKind::Other, "Failed to execute `tar` command")));
-            }
-        };
+            .map_err(|e| {
+                error!("Failed to execute tar command. Error: {:?}", e);
+                AppError::FileIoError(e)
+            })?;
 
         if !status.success() {
-            error!("Failed to extract tar.gz file. Command exited with status: {:?}", status);
-            return Err(AppError::FileIoError(io::Error::new(io::ErrorKind::Other, "Failed to extract tar.gz")));
+            error!("tar command failed with status: {:?}", status);
+            return Err(AppError::FileIoError(io::Error::new(
+                io::ErrorKind::Other,
+                "Failed to extract tar.gz",
+            )));
         }
-        info!("Successfully extracted tar.gz file to: {:?}", output_dir);
 
-        // Clean up the temporary tar.gz file
         if let Err(e) = fs::remove_file(&tar_gz_path) {
             warn!("Failed to remove temporary tar.gz file: {:?}. Error: {:?}", tar_gz_path, e);
-        } else {
-            info!("Successfully removed temporary tar.gz file: {:?}", tar_gz_path);
         }
 
-        info!("Completed extraction of tar.gz file for S3 key: {}", s3_key);
-        Ok(vec!["Extracted files successfully.".to_string()])
+        Ok(vec!["Extraction completed successfully".to_string()])
     }
-
-
 
     /// Helper function to create an error response.
     ///
