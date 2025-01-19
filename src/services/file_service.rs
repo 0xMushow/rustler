@@ -13,6 +13,7 @@ use serde_json::json;
 use std::sync::Arc;
 use axum::response::Response;
 use log::{error, info, warn};
+use redis::{AsyncCommands, RedisError};
 use zip::ZipArchive;
 use crate::clients::clients::Clients;
 use crate::error::AppError;
@@ -67,9 +68,9 @@ impl FileService {
         error!("No archive file found for base name: {}", base_name);
         Err(
             AppError::ValidationError(format!(
-            "No archive file found for base name: {}",
-            base_name
-        )))
+                "No archive file found for base name: {}",
+                base_name
+            )))
     }
 
     /// Downloads and extracts an archive file from S3, automatically detecting the type
@@ -320,5 +321,41 @@ impl FileService {
             })),
         )
             .into_response()
+    }
+
+    pub async fn get_cached_file(&self, base_name: &str) -> Result<Option<String>, AppError> {
+        let mut con = self.clients
+            .get_redis_client()
+            .get_client()
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(AppError::RedisConnectionError)?;
+
+        let cached_file: Option<String> = con
+            .get(format!("file_cache:{}", base_name))
+            .await
+            .map_err(AppError::RedisConnectionError)?;
+
+        Ok(cached_file)
+    }
+
+    /// Caches the extracted files in Redis after downloading and extracting.
+    pub async fn cache_files(&self, base_name: &str, files: &[String]) -> Result<(), AppError> {
+        let mut con = self.clients
+            .get_redis_client()
+            .get_client()
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(AppError::RedisConnectionError)?;
+
+        let cache_key = format!("file_cache:{}", base_name);
+        let files_json = serde_json::to_string(&files)
+            .map_err(AppError::SerializationError)?;
+
+        con.set_ex(cache_key, files_json, 3600)
+            .await
+            .map_err(AppError::RedisConnectionError)?;
+
+        Ok(())
     }
 }
