@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.8.1", features = ["multipart"] }
+axum = { version = "0.8.1", features = ["multipart", "macros"] }
 aws-sdk-s3 = { version = "1.68.0", features = ["behavior-version-latest"] }
 tokio = { version = "1.43.0", features = ["full"] }
 sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio-native-tls", "chrono"] }
 redis = { version = "0.28.1", features = ["aio", "tokio-comp"] }
 dotenv = "0.15.0"
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.135"
+serde_json = { version = "1.0.135", features = ["preserve_order"] }
 log = "0.4.25"
 env_logger = "0.11.6"
 thiserror = "2.0.11"
@@ -21,3 +21,4 @@ chrono = { version = "0.4.39", features = ["serde"] }
 validator = { version = "0.19.0", features = ["derive"] }
 tower-http = { version = "0.6.2", features = ["limit"] }
 zip = "2.2.2"
+indexmap = { version = "2.7.0", features = ["serde"] }
