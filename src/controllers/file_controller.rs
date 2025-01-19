@@ -31,7 +31,7 @@ pub async fn view_codebase_handler(
 
     let output_dir = format!("./competitions/{}", name);
 
-    match file_service.download_and_extract_zip(&name, &output_dir).await {
+    match file_service.download_and_extract_zip_or_tar(&name, &output_dir).await {
         Ok(files) => (StatusCode::OK, Json(json!({ "files": files }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
