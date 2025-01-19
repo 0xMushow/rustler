@@ -13,7 +13,7 @@ use serde_json::json;
 use std::sync::Arc;
 use axum::response::Response;
 use log::{error, info, warn};
-use redis::{AsyncCommands, RedisError};
+use redis::{AsyncCommands};
 use zip::ZipArchive;
 use crate::clients::clients::Clients;
 use crate::error::AppError;
@@ -352,7 +352,7 @@ impl FileService {
         let files_json = serde_json::to_string(&files)
             .map_err(AppError::SerializationError)?;
 
-        con.set_ex(cache_key, files_json, 3600)
+        let _: () = con.set_ex(cache_key, files_json, 3600)
             .await
             .map_err(AppError::RedisConnectionError)?;
 
